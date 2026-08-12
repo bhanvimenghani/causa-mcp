@@ -1,0 +1,69 @@
+---
+# Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: causa
+
+---
+# Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: causa-mcp-server
+  namespace: causa
+  labels:
+    app: causa-mcp-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: causa-mcp-server
+  template:
+    metadata:
+      labels:
+        app: causa-mcp-server
+    spec:
+      containers:
+        - name: causa-mcp-server
+          image: causa-mcp-server:latest
+          imagePullPolicy: Never        # use Kind's local registry — no remote pull
+          ports:
+            - containerPort: 8081
+          env:
+            - name: CAUSA_ENGINE_URL
+              value: "http://causa-engine-svc:8080"   # internal K8s service name for Causa Engine
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /q/health/ready
+              port: 8081
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /q/health/live
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 10
+
+---
+# Service — exposes the MCP server inside the cluster
+apiVersion: v1
+kind: Service
+metadata:
+  name: causa-mcp-server-svc
+  namespace: causa
+spec:
+  selector:
+    app: causa-mcp-server
+  ports:
+    - protocol: TCP
+      port: 8081
+      targetPort: 8081
