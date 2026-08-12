@@ -1,7 +1,22 @@
 package com.causa.mcp;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.causa.mcp.CausaApiClient.AlertItem;
+import com.causa.mcp.CausaApiClient.DiagnosticResponse;
+import com.causa.mcp.CausaApiClient.WebhookRequest;
+import com.causa.mcp.CausaApiClient.WebhookResponse;
 import io.quarkiverse.mcp.server.Tool;
 import io.quarkiverse.mcp.server.ToolArg;
+import io.smallrye.common.annotation.Blocking;
+import jakarta.inject.Inject;
+import org.eclipse.microprofile.rest.client.inject.RestClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Causa MCP Tools
@@ -11,26 +26,131 @@ import io.quarkiverse.mcp.server.ToolArg;
  */
 public class CausaTools {
 
-    @Tool(description = "Initiate a root cause analysis for a failing Kubernetes application")
+    private static final Logger log = LoggerFactory.getLogger(CausaTools.class);
+
+    @Inject
+    @RestClient
+    CausaApiClient apiClient;
+
+    @Inject
+    ObjectMapper objectMapper;
+
+    // -------------------------------------------------------------------------
+    // Tool 1: initiate_rca
+    // Sends a synthetic Prometheus alert to the Causa Engine to trigger an RCA.
+    // Returns the diagnostic_id created by the engine.
+    // -------------------------------------------------------------------------
+
+    @Tool(description = "Initiate a root cause analysis for a failing Kubernetes application. "
+        + "Sends a synthetic alert to Causa Engine and returns a diagnostic_id to track progress.")
+    @Blocking
     public String initiate_rca(
             @ToolArg(description = "Kubernetes deployment name of the failing application") String app_name,
             @ToolArg(description = "Kubernetes namespace where the application is running") String namespace,
             @ToolArg(description = "Name of the failing pod") String pod_name) {
-        // TODO: wire to Causa Engine in causa-api-client PR
-        return "{\"diagnostic_id\": \"stub-001\", \"status\": \"PENDING\", \"message\": \"RCA initiated\"}";
+        try {
+            log.info("Initiating RCA for app={}, namespace={}, pod={}", app_name, namespace, pod_name);
+
+            WebhookRequest request = new WebhookRequest(
+                "4",
+                "firing",
+                "causa-mcp",
+                List.of(new AlertItem(
+                    "firing",
+                    Map.of(
+                        "alertname", "CausaMcpTriggered",
+                        "severity",  "critical",
+                        "namespace", namespace,
+                        "pod",       pod_name,
+                        "container", app_name
+                    ),
+                    Map.of(
+                        "workload_name",  app_name,
+                        "namespace",      namespace,
+                        "pod_name",       pod_name,
+                        "container_name", app_name,
+                        "workload_type",  "Deployment",
+                        "cluster_name",   "kind"
+                    ),
+                    Instant.now().toString(),
+                    "mcp-" + app_name + "-" + namespace + "-" + Instant.now().toEpochMilli()
+                ))
+            );
+
+            WebhookResponse response = apiClient.triggerAlert(request);
+
+            if (response.accepted() == null || response.accepted().isEmpty()) {
+                return "{\"error\": \"Alert rejected by Causa Engine\", \"details\": "
+                    + objectMapper.writeValueAsString(response.rejected()) + "}";
+            }
+
+            String diagnosticId = response.accepted().values().iterator().next();
+
+            return "{"
+                + "\"diagnostic_id\": \"" + diagnosticId + "\","
+                + "\"status\": \"PENDING\","
+                + "\"workload_name\": \"" + app_name + "\","
+                + "\"namespace\": \"" + namespace + "\","
+                + "\"message\": \"RCA initiated. Poll get_rca_status with diagnostic_id.\""
+                + "}";
+
+        } catch (JsonProcessingException e) {
+            log.error("Failed to serialize response", e);
+            return "{\"error\": \"Serialization failed: " + e.getMessage() + "\"}";
+        } catch (Exception e) {
+            log.error("Failed to initiate RCA for app={}", app_name, e);
+            return "{\"error\": \"Failed to initiate RCA: " + e.getMessage() + "\"}";
+        }
     }
 
-    @Tool(description = "Get the current status of a running RCA. Poll until status is COMPLETED or FAILED.")
+    // -------------------------------------------------------------------------
+    // Tool 2: get_rca_status
+    // Polls the Causa Engine for the current status of a diagnostic.
+    // -------------------------------------------------------------------------
+
+    @Tool(description = "Get the current status of a running RCA. "
+        + "Poll this until status is COMPLETED or FAILED.")
+    @Blocking
     public String get_rca_status(
             @ToolArg(description = "The diagnostic_id returned by initiate_rca") String diagnostic_id) {
-        // TODO: wire to Causa Engine in causa-api-client PR
-        return "{\"diagnostic_id\": \"" + diagnostic_id + "\", \"status\": \"COMPLETED\"}";
+        try {
+            log.info("Fetching RCA status for diagnostic_id={}", diagnostic_id);
+
+            DiagnosticResponse response = apiClient.getDiagnostic(diagnostic_id);
+
+            return "{"
+                + "\"diagnostic_id\": \"" + response.id() + "\","
+                + "\"status\": \"" + response.status() + "\""
+                + "}";
+
+        } catch (Exception e) {
+            log.error("Failed to get RCA status for diagnostic_id={}", diagnostic_id, e);
+            return "{\"error\": \"Failed to get status: " + e.getMessage() + "\"}";
+        }
     }
 
-    @Tool(description = "Retrieve the full RCA result once status is COMPLETED")
+    // -------------------------------------------------------------------------
+    // Tool 3: get_rca_result
+    // Fetches the full RCA result from Causa Engine once status is COMPLETED.
+    // -------------------------------------------------------------------------
+
+    @Tool(description = "Retrieve the full RCA result once status is COMPLETED. "
+        + "Returns root cause, evidence, and fix recommendations.")
+    @Blocking
     public String get_rca_result(
             @ToolArg(description = "The diagnostic_id returned by initiate_rca") String diagnostic_id) {
-        // TODO: wire to Causa Engine in causa-api-client PR
-        return "{\"diagnostic_id\": \"" + diagnostic_id + "\", \"status\": \"COMPLETED\", \"root_cause\": \"stub - real data coming in next PR\"}";
+        try {
+            log.info("Fetching RCA result for diagnostic_id={}", diagnostic_id);
+
+            DiagnosticResponse response = apiClient.getDiagnostic(diagnostic_id);
+            return objectMapper.writeValueAsString(response);
+
+        } catch (JsonProcessingException e) {
+            log.error("Failed to serialize RCA result", e);
+            return "{\"error\": \"Serialization failed: " + e.getMessage() + "\"}";
+        } catch (Exception e) {
+            log.error("Failed to get RCA result for diagnostic_id={}", diagnostic_id, e);
+            return "{\"error\": \"Failed to get result: " + e.getMessage() + "\"}";
+        }
     }
 }
