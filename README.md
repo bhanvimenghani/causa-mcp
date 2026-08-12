@@ -1,13 +1,13 @@
 # Causa MCP Server
 
-A Quarkus-based MCP server that bridges Bob IDE with the Causa Engine for automated root cause analysis of failing Kubernetes applications.
+A Quarkus-based MCP server that bridges any MCP-compatible IDE or agent with the Causa Engine for automated root cause analysis of failing Kubernetes applications.
 
 ## Overview
 
-When a developer reports a failing app in Bob IDE, the Causa MCP Server:
+When a developer reports a failing app via an MCP-compatible client, the Causa MCP Server:
 1. Triggers a root cause analysis on the Causa Engine
 2. Polls for analysis completion
-3. Returns structured RCA results for Bob to surface as actionable fixes
+3. Returns structured RCA results for the client to surface as actionable fixes
 
 ## MCP Tools
 

@@ -6,7 +6,7 @@ import io.quarkiverse.mcp.server.ToolArg;
 /**
  * Causa MCP Tools
  *
- * Exposes 3 MCP tools for Bob IDE to trigger and retrieve
+ * Exposes 3 MCP tools for any MCP-compatible IDE or agent to trigger and retrieve
  * root cause analysis from the Causa Engine.
  */
 public class CausaTools {
