@@ -64,9 +64,13 @@ public interface CausaApiClient {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     record WebhookResponse(
-        @JsonProperty("accepted") Map<String, String> accepted,  // alertId -> diagnosticId
-        @JsonProperty("rejected") Map<String, String> rejected,
-        @JsonProperty("status")   String status
+        @JsonProperty("status")        String status,
+        @JsonProperty("message")       String message,
+        @JsonProperty("totalReceived") int totalReceived,
+        @JsonProperty("totalAccepted") int totalAccepted,
+        @JsonProperty("totalRejected") int totalRejected,
+        @JsonProperty("accepted")      Map<String, String> accepted,  // alertId -> diagnosticId
+        @JsonProperty("rejected")      Map<String, String> rejected
     ) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -90,23 +94,27 @@ public interface CausaApiClient {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     record DiagnosisInfo(
-        @JsonProperty("issue_title")          String issueTitle,
-        @JsonProperty("issue_summary")        String issueSummary,
-        @JsonProperty("root_cause")           String rootCause,
-        @JsonProperty("anomaly_type")         String anomalyType,
-        @JsonProperty("evidences")            List<String> evidences,
-        @JsonProperty("supporting_logs")      List<String> supportingLogs,
-        @JsonProperty("rca_confidence_score") Double rcaConfidenceScore,
-        @JsonProperty("confidence_summary")   String confidenceSummary,
-        @JsonProperty("recommendations")      List<RecommendationInfo> recommendations,
-        @JsonProperty("llm_notes")            String llmNotes
+        @JsonProperty("issue_title")           String issueTitle,
+        @JsonProperty("issue_summary")         String issueSummary,
+        @JsonProperty("issue_description")     String issueDescription,
+        @JsonProperty("technical_description") String technicalDescription,
+        @JsonProperty("anomaly_type")          String anomalyType,
+        @JsonProperty("root_cause")            String rootCause,
+        @JsonProperty("evidences")             List<String> evidences,
+        @JsonProperty("supporting_logs")       List<String> supportingLogs,
+        @JsonProperty("rca_confidence_score")  Double rcaConfidenceScore,
+        @JsonProperty("confidence_summary")    String confidenceSummary,
+        @JsonProperty("recommendations")       List<RecommendationInfo> recommendations,
+        @JsonProperty("llm_notes")             String llmNotes
     ) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     record RecommendationInfo(
-        @JsonProperty("solution_type")        String solutionType,
-        @JsonProperty("solution_title")       String solutionTitle,
-        @JsonProperty("solution_description") String solutionDescription,
-        @JsonProperty("implementation_notes") String implementationNotes
+        @JsonProperty("solution_type")             String solutionType,
+        @JsonProperty("solution_title")            String solutionTitle,
+        @JsonProperty("solution_description")      String solutionDescription,
+        @JsonProperty("implementation_notes")      String implementationNotes,
+        @JsonProperty("solution_confidence_score") Double solutionConfidenceScore,
+        @JsonProperty("solution_alerts")           List<String> solutionAlerts
     ) {}
 }

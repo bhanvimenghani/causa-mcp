@@ -28,6 +28,9 @@ public class CausaTools {
 
     private static final Logger log = LoggerFactory.getLogger(CausaTools.class);
 
+    @org.eclipse.microprofile.config.inject.ConfigProperty(name = "causa.cluster.name", defaultValue = "kind")
+    String clusterName;
+
     @Inject
     @RestClient
     CausaApiClient apiClient;
@@ -70,7 +73,7 @@ public class CausaTools {
                         "pod_name",       pod_name,
                         "container_name", app_name,
                         "workload_type",  "Deployment",
-                        "cluster_name",   "kind"
+                        "cluster_name",   clusterName
                     ),
                     Instant.now().toString(),
                     "mcp-" + app_name + "-" + namespace + "-" + Instant.now().toEpochMilli()
@@ -80,26 +83,29 @@ public class CausaTools {
             WebhookResponse response = apiClient.triggerAlert(request);
 
             if (response.accepted() == null || response.accepted().isEmpty()) {
-                return "{\"error\": \"Alert rejected by Causa Engine\", \"details\": "
-                    + objectMapper.writeValueAsString(response.rejected()) + "}";
+                return objectMapper.writeValueAsString(Map.of(
+                    "error",   "Alert rejected by Causa Engine",
+                    "message", response.message() != null ? response.message() : "",
+                    "details", response.rejected() != null ? response.rejected() : Map.of()
+                ));
             }
 
             String diagnosticId = response.accepted().values().iterator().next();
 
-            return "{"
-                + "\"diagnostic_id\": \"" + diagnosticId + "\","
-                + "\"status\": \"PENDING\","
-                + "\"workload_name\": \"" + app_name + "\","
-                + "\"namespace\": \"" + namespace + "\","
-                + "\"message\": \"RCA initiated. Poll get_rca_status with diagnostic_id.\""
-                + "}";
+            return objectMapper.writeValueAsString(Map.of(
+                "diagnostic_id", diagnosticId,
+                "status",        "PENDING",
+                "workload_name", app_name,
+                "namespace",     namespace,
+                "message",       "RCA initiated. Poll get_rca_status with diagnostic_id."
+            ));
 
         } catch (JsonProcessingException e) {
             log.error("Failed to serialize response", e);
-            return "{\"error\": \"Serialization failed: " + e.getMessage() + "\"}";
+            return "{\"error\": \"serialization_failed\"}";
         } catch (Exception e) {
             log.error("Failed to initiate RCA for app={}", app_name, e);
-            return "{\"error\": \"Failed to initiate RCA: " + e.getMessage() + "\"}";
+            return "{\"error\": \"engine_unavailable\"}";
         }
     }
 
@@ -118,14 +124,14 @@ public class CausaTools {
 
             DiagnosticResponse response = apiClient.getDiagnostic(diagnostic_id);
 
-            return "{"
-                + "\"diagnostic_id\": \"" + response.id() + "\","
-                + "\"status\": \"" + response.status() + "\""
-                + "}";
+            return objectMapper.writeValueAsString(Map.of(
+                "diagnostic_id", response.id(),
+                "status",        response.status()
+            ));
 
         } catch (Exception e) {
             log.error("Failed to get RCA status for diagnostic_id={}", diagnostic_id, e);
-            return "{\"error\": \"Failed to get status: " + e.getMessage() + "\"}";
+            return "{\"error\": \"engine_unavailable\"}";
         }
     }
 
@@ -147,10 +153,10 @@ public class CausaTools {
 
         } catch (JsonProcessingException e) {
             log.error("Failed to serialize RCA result", e);
-            return "{\"error\": \"Serialization failed: " + e.getMessage() + "\"}";
+            return "{\"error\": \"serialization_failed\"}";
         } catch (Exception e) {
             log.error("Failed to get RCA result for diagnostic_id={}", diagnostic_id, e);
-            return "{\"error\": \"Failed to get result: " + e.getMessage() + "\"}";
+            return "{\"error\": \"engine_unavailable\"}";
         }
     }
 }
