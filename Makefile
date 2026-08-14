@@ -1,4 +1,4 @@
-IMAGE_NAME ?= causa-mcp-server
+IMAGE_NAME ?= causa-mcp
 IMAGE_TAG  ?= latest
 
 .PHONY: build image load deploy port-forward
@@ -15,10 +15,10 @@ image: build
 load: image
 	kind load docker-image $(IMAGE_NAME):$(IMAGE_TAG)
 
-## Deploy to the Kind cluster
+## Deploy to the Kind cluster (IMAGE_TAG is substituted via envsubst)
 deploy:
-	kubectl apply -f manifests/causa-mcp-server.yaml
+	IMAGE_TAG=$(IMAGE_TAG) envsubst < manifests/causa-mcp-server.yaml | kubectl apply -f -
 
 ## Port-forward the MCP server to localhost:8081
 port-forward:
-	kubectl port-forward -n causa svc/causa-mcp-server 8081:8081
+	kubectl port-forward -n causa svc/causa-mcp 8081:8081

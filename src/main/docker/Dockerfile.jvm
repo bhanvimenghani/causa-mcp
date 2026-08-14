@@ -3,12 +3,12 @@
 #
 # Build:
 #   ./mvnw clean package -DskipTests
-#   docker build -f src/main/docker/Dockerfile.jvm -t causa-mcp-server:latest .
+#   docker build -f src/main/docker/Dockerfile.jvm -t causa-mcp:latest .
 #
 # Run locally:
 #   docker run -i --rm -p 8081:8081 \
 #     -e CAUSA_ENGINE_URL=http://host.docker.internal:8080 \
-#     causa-mcp-server:latest
+#     causa-mcp:latest
 ####
 FROM registry.access.redhat.com/ubi9/openjdk-21-runtime:1.24
 

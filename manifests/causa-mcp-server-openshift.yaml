@@ -3,22 +3,22 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: causa-mcp-server
+  name: causa-mcp
   labels:
-    app: causa-mcp-server
+    app: causa-mcp
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: causa-mcp-server
+      app: causa-mcp
   template:
     metadata:
       labels:
-        app: causa-mcp-server
+        app: causa-mcp
     spec:
       containers:
-        - name: causa-mcp-server
-          image: quay.io/bmenghan/causa-mcp-server:latest
+        - name: causa-mcp
+          image: quay.io/bmenghan/causa-mcp:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8081
@@ -52,10 +52,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: causa-mcp-server
+  name: causa-mcp
 spec:
   selector:
-    app: causa-mcp-server
+    app: causa-mcp
   ports:
     - protocol: TCP
       port: 8081
@@ -66,11 +66,11 @@ spec:
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
-  name: causa-mcp-server
+  name: causa-mcp
 spec:
   to:
     kind: Service
-    name: causa-mcp-server
+    name: causa-mcp
   port:
     targetPort: 8081
   tls:
