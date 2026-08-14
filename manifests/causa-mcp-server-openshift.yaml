@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
         - name: causa-mcp
-          image: quay.io/bmenghan/causa-mcp:latest
+          image: quay.io/causaai/causa-mcp:0.0.1
           imagePullPolicy: Always
           ports:
             - containerPort: 8081
