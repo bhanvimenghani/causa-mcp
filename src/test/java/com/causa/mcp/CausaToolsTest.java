@@ -23,6 +23,10 @@ import static org.mockito.Mockito.when;
 @QuarkusTest
 class CausaToolsTest {
 
+    private static final String APP_NAME  = "catalog";
+    private static final String NAMESPACE = "demo";
+    private static final String POD_NAME  = "catalog-123";
+
     @Inject
     CausaTools causaTools;
 
@@ -45,13 +49,13 @@ class CausaToolsTest {
             Map.of()
         ));
 
-        String result = causaTools.initiate_rca("catalog", "demo", "catalog-123");
+        String result = causaTools.initiate_rca(APP_NAME, NAMESPACE, POD_NAME);
         JsonNode json = objectMapper.readTree(result);
 
         assertEquals("diag-123", json.get("diagnostic_id").asText());
         assertEquals("PENDING", json.get("status").asText());
-        assertEquals("catalog", json.get("workload_name").asText());
-        assertEquals("demo", json.get("namespace").asText());
+        assertEquals(APP_NAME, json.get("workload_name").asText());
+        assertEquals(NAMESPACE, json.get("namespace").asText());
     }
 
     @Test
@@ -66,7 +70,7 @@ class CausaToolsTest {
             Map.of("alert-1", "invalid payload")
         ));
 
-        String result = causaTools.initiate_rca("catalog", "demo", "catalog-123");
+        String result = causaTools.initiate_rca(APP_NAME, NAMESPACE, POD_NAME);
         JsonNode json = objectMapper.readTree(result);
 
         assertEquals("Alert rejected by Causa Engine", json.get("error").asText());
@@ -75,12 +79,13 @@ class CausaToolsTest {
     }
 
     @Test
-    void initiateRcaReturnsEngineUnavailableOnBackendFailure() {
+    void initiateRcaReturnsEngineUnavailableOnBackendFailure() throws Exception {
         when(apiClient.triggerAlert(any())).thenThrow(new RuntimeException("backend unavailable"));
 
-        String result = causaTools.initiate_rca("catalog", "demo", "catalog-123");
+        String result = causaTools.initiate_rca(APP_NAME, NAMESPACE, POD_NAME);
+        JsonNode json = objectMapper.readTree(result);
 
-        assertEquals("{\"error\": \"engine_unavailable\"}", result);
+        assertEquals("engine_unavailable", json.get("error").asText());
     }
 
     @Test
