@@ -3,6 +3,7 @@ package com.causa.mcp;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.causa.mcp.CausaApiClient.AlertItem;
+import com.causa.mcp.CausaApiClient.DiagnosticListItem;
 import com.causa.mcp.CausaApiClient.DiagnosticResponse;
 import com.causa.mcp.CausaApiClient.WebhookRequest;
 import com.causa.mcp.CausaApiClient.WebhookResponse;
@@ -21,7 +22,7 @@ import java.util.Map;
 /**
  * Causa MCP Tools
  *
- * Exposes 3 MCP tools for any MCP-compatible IDE or agent to trigger and retrieve
+ * Exposes 4 MCP tools for any MCP-compatible IDE or agent to trigger and retrieve
  * root cause analysis from the Causa Engine.
  */
 public class CausaTools {
@@ -156,6 +157,38 @@ public class CausaTools {
             return "{\"error\": \"serialization_failed\"}";
         } catch (Exception e) {
             log.error("Failed to get RCA result for diagnostic_id={}", diagnostic_id, e);
+            return "{\"error\": \"engine_unavailable\"}";
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Tool 4: list_rca
+    // Lists all RCAs from Causa Engine, filtered by container name and namespace.
+    // -------------------------------------------------------------------------
+
+    @Tool(description = "List all RCA diagnostics for a given container and namespace. "
+        + "Returns a summary of each diagnostic including id, status, issue, and workload info.")
+    @Blocking
+    public String list_rca(
+            @ToolArg(description = "Kubernetes container (workload) name to filter by") String container_name,
+            @ToolArg(description = "Kubernetes namespace to filter by") String namespace) {
+        try {
+            log.info("Listing RCAs for container={}, namespace={}", container_name, namespace);
+
+            List<DiagnosticListItem> filtered = apiClient.listDiagnostics(container_name, namespace);
+
+            return objectMapper.writeValueAsString(Map.of(
+                "container_name", container_name,
+                "namespace",      namespace,
+                "count",          filtered.size(),
+                "diagnostics",    filtered
+            ));
+
+        } catch (JsonProcessingException e) {
+            log.error("Failed to serialize list_rca response", e);
+            return "{\"error\": \"serialization_failed\"}";
+        } catch (Exception e) {
+            log.error("Failed to list RCAs for container={}, namespace={}", container_name, namespace, e);
             return "{\"error\": \"engine_unavailable\"}";
         }
     }
