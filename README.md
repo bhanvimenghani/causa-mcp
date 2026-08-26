@@ -21,6 +21,7 @@ When a developer reports a failing app via an MCP-compatible client, the Causa M
 
 - Java 21
 - Maven 3.9+
+- Docker with the [buildx plugin](https://docs.docker.com/buildx/working-with-buildx/) (required for container image targets)
 
 ## Running locally
 
@@ -39,6 +40,9 @@ Server starts on `http://localhost:8081`
 ```bash
 # Build a local image
 make image IMAGE_NAME=quay.io/causa-ai-hub/causa-mcp-server IMAGE_TAG=0.0.1
+
+# Authenticate with the registry before pushing
+docker login quay.io
 
 # Build and push a multi-arch image
 make image-multiarch IMAGE_NAME=quay.io/causa-ai-hub/causa-mcp-server IMAGE_TAG=0.0.1

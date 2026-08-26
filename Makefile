@@ -1,4 +1,4 @@
-IMAGE_NAME ?= causa-mcp
+IMAGE_NAME ?= quay.io/causa-ai-hub/causa-mcp-server
 IMAGE_TAG  ?= latest
 PLATFORMS ?= linux/amd64,linux/arm64
 
