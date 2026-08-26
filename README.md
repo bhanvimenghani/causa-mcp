@@ -34,6 +34,18 @@ When a developer reports a failing app via an MCP-compatible client, the Causa M
 
 Server starts on `http://localhost:8081`
 
+## Container images
+
+```bash
+# Build a local image
+make image IMAGE_NAME=quay.io/causa-ai-hub/causa-mcp-server IMAGE_TAG=0.0.1
+
+# Build and push a multi-arch image
+make image-multiarch IMAGE_NAME=quay.io/causa-ai-hub/causa-mcp-server IMAGE_TAG=0.0.1
+```
+
+The multi-arch target publishes both `linux/amd64` and `linux/arm64`. Override `PLATFORMS` if needed.
+
 ## Configuration
 
 | Property | Default | Description |
