@@ -43,8 +43,8 @@ public interface CausaApiClient {
 
     @GET
     @Path("/api/v1/diagnostics")
-    List<DiagnosticListItem> listDiagnostics(
-        @QueryParam("container_name") String containerName,
+    DiagnosticsListResponse listDiagnostics(
+        @QueryParam("workload_name")  String workload,
         @QueryParam("namespace") String namespace
     );
 
@@ -74,6 +74,15 @@ public interface CausaApiClient {
         Map<String, String> annotations,
         String startsAt,
         String fingerprint
+    ) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record DiagnosticsListResponse(
+        @JsonProperty("items")      List<DiagnosticListItem> items,
+        @JsonProperty("total")      long total,
+        @JsonProperty("page")       int page,
+        @JsonProperty("pageSize")   int pageSize,
+        @JsonProperty("totalPages") int totalPages
     ) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)

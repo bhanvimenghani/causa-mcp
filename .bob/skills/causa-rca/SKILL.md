@@ -1,14 +1,16 @@
 ---
 name: causa-rca
 description: Activate when a developer asks about application health, diagnostics, root cause analysis, existing RCA results, or why their application is failing. Checks for existing diagnostics before starting new ones.
-compatibility: Requires the Causa MCP server to be configured in Bob with tools initiate_rca and get_rca_result.
+compatibility: Requires the Causa MCP server to be configured in Bob with tools initiate_rca, get_rca_result, and list_rca.
 metadata:
   category: diagnostics
   domain: kubernetes, jvm
   mcp_server: causa-mcp-server
   mcp_tools:
     - initiate_rca
+    - get_rca_status
     - get_rca_result
+    - list_rca
 ---
 
 # Causa RCA Skill
@@ -63,13 +65,22 @@ Before proceeding with any workflow path, determine the target application:
 2. **If the developer specified an app** — match it against the live pod list. If the pod no longer exists, tell the developer and show what is currently running.
 3. **If the developer did not specify an app** — present the list of currently running pods and ask which one to analyze:
    *"Here are the workloads currently running in `<namespace>`: [list]. Which one should I run RCA on?"*
-4. **Use conversation context only as a hint** — if the developer previously mentioned an app, check whether that pod still exists in the live list before reusing it.
+4. **If the developer gives a pod name only** — derive the workload/container name from the pod details (e.g. strip the pod hash suffix, or use `kubectl get pod <pod> -n <namespace> -o jsonpath='{.spec.containers[0].name}'`). Use the derived container name as `workload` when calling `list_rca` or `initiate_rca`.
+5. **Use conversation context only as a hint** — if the developer previously mentioned an app, check whether that pod still exists in the live list before reusing it.
 
 Remember the `app_name`, `namespace`, and `pod_name` across the conversation so the developer does not need to repeat them.
 
 ---
 
 ## Workflow
+
+### Step 0 — Check if developer already has a diagnostic_id
+
+If the developer provides a `diagnostic_id` directly (e.g. *"show me diag_abc123"* or *"what's the result of diag_abc123"*):
+- Skip all other steps and go directly to **Step 4** — call `get_rca_result(diagnostic_id="<id>")` and render the result.
+- This path always works regardless of workload or namespace.
+
+---
 
 ### Step 1 — Classify Intent
 
@@ -82,10 +93,11 @@ Determine the developer's intent from their message: **QUERY**, **INVESTIGATE**,
 
 ### Step 2 — Check Existing Diagnostics
 
-Call `get_rca_result` with the container and pod name to list all existing diagnoses for this application:
+Call `list_rca` with the workload name and namespace to find existing diagnostics for this application.
+If the developer provided a pod name but not a workload name, derive the container/workload name from pod details first (see Application Identification step 4).
 
 ```
-get_rca_result(container="<app_name>", pod_name="<pod_name>")
+list_rca(workload="<app_name>", namespace="<namespace>")
 ```
 
 Evaluate the results using this decision matrix:
@@ -100,7 +112,7 @@ Evaluate the results using this decision matrix:
 | INVESTIGATE | IN_PROGRESS or PENDING RCA exists | *"An analysis for `<app>` is already running. Waiting for it to complete."* Then poll using Step 3b. Do **not** start a duplicate. |
 | INVESTIGATE | Nothing found | Proceed to Step 3 (start new analysis). |
 
-**If the `get_rca_result` listing call fails**, fall back to Step 3 (start new analysis). Mention: *"Could not check existing diagnostics. Starting a new analysis."*
+**If the `list_rca` call fails**, fall back to Step 3 (start new analysis). Mention: *"Could not check existing diagnostics. Starting a new analysis."*
 
 ---
 
@@ -222,5 +234,5 @@ Numbered list of immediate actions from the `Immediate Mitigation` recommendatio
 | Unexpected response shape | *"The RCA result has an unexpected format. Here is the raw response:"* then show the raw JSON. |
 | Duplicate in-progress analysis | Do not start a new RCA. Inform: *"An analysis for `<app>` is already in progress. Waiting for it to complete."* Then poll the existing one. |
 | Stale completed RCA | Inform: *"The last RCA may be outdated. Starting a fresh analysis for current state."* Then proceed with a new RCA. |
-| Listing call fails | Fall back to starting a new analysis. Mention: *"Could not check existing diagnostics. Starting a new analysis."* |
+| `list_rca` call fails | Fall back to starting a new analysis. Mention: *"Could not check existing diagnostics. Starting a new analysis."* |
 | No diagnostics + QUERY intent | *"No existing RCA found for `<app>`. Would you like me to start one?"* Wait for confirmation. |
