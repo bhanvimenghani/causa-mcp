@@ -177,12 +177,16 @@ public class CausaTools {
 
             DiagnosticsListResponse response = apiClient.listDiagnostics(workload, namespace);
 
-            return objectMapper.writeValueAsString(Map.of(
-                "workload",    workload,
-                "namespace",   namespace,
-                "total",       response.total(),
-                "diagnostics", response.items()
-            ));
+            Map<String, Object> result = new java.util.LinkedHashMap<>();
+            if (workload != null) {
+                result.put("workload", workload);
+            }
+            if (namespace != null) {
+                result.put("namespace", namespace);
+            }
+            result.put("total", response.total());
+            result.put("diagnostics", response.items());
+            return objectMapper.writeValueAsString(result);
 
         } catch (JsonProcessingException e) {
             log.error("Failed to serialize list_rca response", e);
