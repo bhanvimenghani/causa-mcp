@@ -3,6 +3,7 @@ package com.causa.mcp;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.causa.mcp.CausaApiClient.AlertItem;
+import com.causa.mcp.CausaApiClient.DiagnosticsListResponse;
 import com.causa.mcp.CausaApiClient.DiagnosticResponse;
 import com.causa.mcp.CausaApiClient.WebhookRequest;
 import com.causa.mcp.CausaApiClient.WebhookResponse;
@@ -21,7 +22,7 @@ import java.util.Map;
 /**
  * Causa MCP Tools
  *
- * Exposes 3 MCP tools for any MCP-compatible IDE or agent to trigger and retrieve
+ * Exposes 4 MCP tools for any MCP-compatible IDE or agent to trigger and retrieve
  * root cause analysis from the Causa Engine.
  */
 public class CausaTools {
@@ -156,6 +157,42 @@ public class CausaTools {
             return "{\"error\": \"serialization_failed\"}";
         } catch (Exception e) {
             log.error("Failed to get RCA result for diagnostic_id={}", diagnostic_id, e);
+            return "{\"error\": \"engine_unavailable\"}";
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Tool 4: list_rca
+    // Lists RCAs from Causa Engine, filtered by workload name and/or namespace.
+    // -------------------------------------------------------------------------
+
+    @Tool(description = "List RCA diagnostics filtered by workload name and/or namespace. "
+        + "Returns a summary of each diagnostic including id, status, issue, and workload info.")
+    @Blocking
+    public String list_rca(
+            @ToolArg(description = "Workload name to filter by (container name for k8s, workload name for VM). Optional.") String workload,
+            @ToolArg(description = "Kubernetes namespace to filter by. Optional.") String namespace) {
+        try {
+            log.info("Listing RCAs for workload={}, namespace={}", workload, namespace);
+
+            DiagnosticsListResponse response = apiClient.listDiagnostics(workload, namespace);
+
+            Map<String, Object> result = new java.util.LinkedHashMap<>();
+            if (workload != null) {
+                result.put("workload", workload);
+            }
+            if (namespace != null) {
+                result.put("namespace", namespace);
+            }
+            result.put("total", response.total());
+            result.put("diagnostics", response.items());
+            return objectMapper.writeValueAsString(result);
+
+        } catch (JsonProcessingException e) {
+            log.error("Failed to serialize list_rca response", e);
+            return "{\"error\": \"serialization_failed\"}";
+        } catch (Exception e) {
+            log.error("Failed to list RCAs for workload={}, namespace={}", workload, namespace, e);
             return "{\"error\": \"engine_unavailable\"}";
         }
     }
