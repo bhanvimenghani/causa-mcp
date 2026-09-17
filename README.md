@@ -39,13 +39,13 @@ Server starts on `http://localhost:8081`
 
 ```bash
 # Build a local image
-make image IMAGE_NAME=quay.io/causa-ai-hub/causa-mcp-server IMAGE_TAG=0.0.1
+make image IMAGE_NAME=quay.io/causa-ai-hub/causa-mcp IMAGE_TAG=0.0.1
 
 # Authenticate with the registry before pushing
 docker login quay.io
 
 # Build and push a multi-arch image
-make image-multiarch IMAGE_NAME=quay.io/causa-ai-hub/causa-mcp-server IMAGE_TAG=0.0.1
+make image-multiarch IMAGE_NAME=quay.io/causa-ai-hub/causa-mcp IMAGE_TAG=0.0.1
 ```
 
 The multi-arch target publishes both `linux/amd64` and `linux/arm64`. Override `PLATFORMS` if needed.
