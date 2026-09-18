@@ -8,9 +8,11 @@ import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import org.eclipse.microprofile.rest.client.inject.RegisterRestClient;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -33,6 +35,18 @@ public interface CausaApiClient {
     @POST
     @Path("/api/v1/webhooks/alerts")
     WebhookResponse triggerAlert(WebhookRequest request);
+
+    // -------------------------------------------------------------------------
+    // GET /api/v1/diagnostics
+    // Lists all diagnostics (lightweight summary)
+    // -------------------------------------------------------------------------
+
+    @GET
+    @Path("/api/v1/diagnostics")
+    DiagnosticsListResponse listDiagnostics(
+        @QueryParam("workload_name")  String workload,
+        @QueryParam("namespace") String namespace
+    );
 
     // -------------------------------------------------------------------------
     // GET /api/v1/diagnostics/{id}
@@ -60,6 +74,28 @@ public interface CausaApiClient {
         Map<String, String> annotations,
         String startsAt,
         String fingerprint
+    ) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record DiagnosticsListResponse(
+        @JsonProperty("items")      List<DiagnosticListItem> items,
+        @JsonProperty("total")      long total,
+        @JsonProperty("page")       int page,
+        @JsonProperty("pageSize")   int pageSize,
+        @JsonProperty("totalPages") int totalPages
+    ) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record DiagnosticListItem(
+        @JsonProperty("id")            String id,
+        @JsonProperty("status")        String status,
+        @JsonProperty("issue")         String issue,
+        @JsonProperty("issue_summary") String issueSummary,
+        @JsonProperty("workload_name") String workloadName,
+        @JsonProperty("namespace")     String namespace,
+        @JsonProperty("severity")      String severity,
+        @JsonProperty("cluster_name")  String clusterName,
+        @JsonProperty("date")          Instant date
     ) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
