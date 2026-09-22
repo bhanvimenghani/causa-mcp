@@ -22,6 +22,7 @@ usage() {
     echo "  -b BUILD         Build image true/false (default: true)"
     echo "  -p PUSH          Push image true/false (default: false)"
     echo "  -l PLATFORMS     Target platforms (default: linux/amd64,linux/arm64)"
+    echo "  -c CLEAN         Run clean build true/false (default: true)"
     echo "  -s SKIP_TESTS    Skip tests during Maven build true/false (default: true)"
     echo "  -h               Show this help message"
     echo ""
@@ -33,6 +34,7 @@ usage() {
     echo "  BUILD_IMAGE      Build image (true/false)"
     echo "  PUSH_IMAGE       Push image (true/false)"
     echo "  PLATFORMS        Target platforms"
+    echo "  CLEAN_BUILD      Clean build (true/false)"
     echo "  SKIP_TESTS       Skip tests (true/false)"
     echo ""
     echo "Examples:"
@@ -74,7 +76,6 @@ print_error() {
 # Resolve the project root relative to this script's location
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-DOCKERFILE="${PROJECT_ROOT}/src/main/docker/Dockerfile.jvm"
 
 # Resolve application version from pom.xml
 resolve_app_version() {
@@ -103,11 +104,12 @@ IMAGE_TAG="${IMAGE_TAG:-$(resolve_app_version)}"
 BUILD_IMAGE="${BUILD_IMAGE:-true}"
 PUSH_IMAGE="${PUSH_IMAGE:-false}"
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
+CLEAN_BUILD="${CLEAN_BUILD:-true}"
 SKIP_TESTS="${SKIP_TESTS:-true}"
 IMAGE_NAME="${IMAGE_NAME:-}"
 
 # Parse command-line arguments (override env vars)
-while getopts "i:r:n:t:b:p:l:s:h" opt; do
+while getopts "i:r:n:t:b:p:l:c:s:h" opt; do
     case ${opt} in
         i ) IMAGE_NAME="$OPTARG" ;;
         r ) REGISTRY="$OPTARG" ;;
@@ -116,6 +118,7 @@ while getopts "i:r:n:t:b:p:l:s:h" opt; do
         b ) BUILD_IMAGE="$OPTARG" ;;
         p ) PUSH_IMAGE="$OPTARG" ;;
         l ) PLATFORMS="$OPTARG" ;;
+        c ) CLEAN_BUILD="$OPTARG" ;;
         s ) SKIP_TESTS="$OPTARG" ;;
         h ) usage 0 ;;
         \? )
@@ -128,6 +131,7 @@ done
 # Validate booleans
 validate_boolean "$BUILD_IMAGE" "BUILD_IMAGE (-b)"
 validate_boolean "$PUSH_IMAGE"  "PUSH_IMAGE (-p)"
+validate_boolean "$CLEAN_BUILD" "CLEAN_BUILD (-c)"
 validate_boolean "$SKIP_TESTS"  "SKIP_TESTS (-s)"
 
 # Construct image name if not provided
@@ -146,11 +150,6 @@ if [ ! -f "${PROJECT_ROOT}/mvnw" ]; then
     exit 1
 fi
 
-if [ ! -f "${DOCKERFILE}" ]; then
-    print_error "Dockerfile not found at ${DOCKERFILE}."
-    exit 1
-fi
-
 cd "${PROJECT_ROOT}"
 chmod +x ./mvnw
 
@@ -161,6 +160,7 @@ print_info "Image Name:  ${IMAGE_NAME}"
 print_info "Platforms:   ${PLATFORMS}"
 print_info "Build:       ${BUILD_IMAGE}"
 print_info "Push:        ${PUSH_IMAGE}"
+print_info "Clean Build: ${CLEAN_BUILD}"
 print_info "Skip Tests:  ${SKIP_TESTS}"
 echo ""
 
@@ -170,89 +170,48 @@ if [ "$PUSH_IMAGE" = "true" ]; then
     echo ""
 fi
 
-# ── Step 1: Maven build ──────────────────────────────────────────────────────
+# Build Maven command
+MAVEN_CMD="./mvnw"
 
-if [ "$BUILD_IMAGE" = "true" ]; then
-    MAVEN_CMD="./mvnw clean package"
-    if [ "$SKIP_TESTS" = "true" ]; then
-        MAVEN_CMD="${MAVEN_CMD} -DskipTests"
-    fi
+if [ "$CLEAN_BUILD" = "true" ]; then
+    MAVEN_CMD="${MAVEN_CMD} clean"
+fi
 
-    print_info "Building JAR..."
-    echo "${MAVEN_CMD}"
+MAVEN_CMD="${MAVEN_CMD} package"
+
+if [ "$SKIP_TESTS" = "true" ]; then
+    MAVEN_CMD="${MAVEN_CMD} -DskipTests"
+fi
+
+# Pass container image properties to Quarkus Jib
+MAVEN_CMD="${MAVEN_CMD} -Dquarkus.container-image.build=${BUILD_IMAGE}"
+MAVEN_CMD="${MAVEN_CMD} -Dquarkus.container-image.image=${IMAGE_NAME}"
+MAVEN_CMD="${MAVEN_CMD} -Dquarkus.container-image.push=${PUSH_IMAGE}"
+MAVEN_CMD="${MAVEN_CMD} -Dquarkus.jib.platforms=${PLATFORMS}"
+
+print_info "Executing Maven command:"
+echo "${MAVEN_CMD}"
+echo ""
+
+print_info "Starting build process..."
+if eval "${MAVEN_CMD}"; then
     echo ""
-    if ! eval "${MAVEN_CMD}"; then
-        print_error "Maven build failed."
-        exit 1
-    fi
-    print_info "JAR built successfully."
-    echo ""
+    print_info "=== Build Summary ==="
+    print_info "✓ Build completed successfully"
+    print_info "Image: ${IMAGE_NAME}"
+    print_info "Platforms: ${PLATFORMS}"
 
-    # ── Step 2: Docker image build ───────────────────────────────────────────
-
-    # Determine number of platforms requested
-    PLATFORM_COUNT=$(echo "${PLATFORMS}" | tr ',' '\n' | wc -l | tr -d ' ')
-
-    if [ "${PLATFORM_COUNT}" -gt 1 ]; then
-        # Multi-arch: requires buildx
-        if ! docker buildx version &>/dev/null; then
-            print_error "docker buildx is not available. Install Docker Buildx to build multi-arch images."
-            exit 1
-        fi
-
-        BUILDX_CMD="docker buildx build --platform ${PLATFORMS} -f ${DOCKERFILE} -t ${IMAGE_NAME} --provenance=false"
-        if [ "$PUSH_IMAGE" = "true" ]; then
-            BUILDX_CMD="${BUILDX_CMD} --output type=registry"
-        else
-            BUILDX_CMD="${BUILDX_CMD} --load"
-        fi
-        BUILDX_CMD="${BUILDX_CMD} ."
-
-        print_info "Building multi-arch image (${PLATFORMS})..."
-        echo "${BUILDX_CMD}"
-        echo ""
-        if ! eval "${BUILDX_CMD}"; then
-            print_error "docker buildx build failed."
-            exit 1
-        fi
-
-        # Push already handled by --output type=registry above
-        PUSH_IMAGE="false"
-
+    if [ "$PUSH_IMAGE" = "true" ]; then
+        print_info "✓ Image pushed to registry"
     else
-        # Single-arch: plain docker build
-        DOCKER_CMD="docker build -f ${DOCKERFILE} -t ${IMAGE_NAME} ."
-
-        print_info "Building image for ${PLATFORMS}..."
-        echo "${DOCKER_CMD}"
-        echo ""
-        if ! eval "${DOCKER_CMD}"; then
-            print_error "docker build failed."
-            exit 1
-        fi
+        print_warn "Image was built but not pushed (PUSH_IMAGE=false)"
     fi
-
-    print_info "Image built: ${IMAGE_NAME}"
     echo ""
-fi
-
-# ── Step 3: Push (single-arch path only) ────────────────────────────────────
-
-if [ "$PUSH_IMAGE" = "true" ]; then
-    print_info "Pushing ${IMAGE_NAME}..."
-    if ! docker push "${IMAGE_NAME}"; then
-        print_error "docker push failed. Run: docker login ${REGISTRY}"
-        exit 1
-    fi
-    print_info "Image pushed: ${IMAGE_NAME}"
+    exit 0
+else
     echo ""
+    print_error "=== Build Failed ==="
+    print_error "Build process failed. Check the logs above for details."
+    echo ""
+    exit 1
 fi
-
-# ── Summary ──────────────────────────────────────────────────────────────────
-
-echo ""
-print_info "=== Build Summary ==="
-print_info "✓ Build completed successfully"
-print_info "Image: ${IMAGE_NAME}"
-print_info "Platforms: ${PLATFORMS}"
-echo ""
