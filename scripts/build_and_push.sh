@@ -134,9 +134,19 @@ validate_boolean "$PUSH_IMAGE"  "PUSH_IMAGE (-p)"
 validate_boolean "$CLEAN_BUILD" "CLEAN_BUILD (-c)"
 validate_boolean "$SKIP_TESTS"  "SKIP_TESTS (-s)"
 
+# Validate each platform value against the set supported by Quarkus Jib
+VALID_PLATFORMS="linux/amd64 linux/arm64 linux/s390x linux/ppc64le"
+IFS=',' read -ra plat_arr <<< "$PLATFORMS"
+for p in "${plat_arr[@]}"; do
+    if [[ ! " ${VALID_PLATFORMS} " =~ " ${p} " ]]; then
+        print_error "Unsupported platform: '${p}'. Supported: ${VALID_PLATFORMS}"
+        exit 1
+    fi
+done
+
 # Jib cannot load a multi-platform manifest into the local Docker daemon;
 # a registry push is required to store the manifest list.
-if [[ "$PLATFORMS" == *,* ]] && [ "$PUSH_IMAGE" = "false" ]; then
+if [[ "${#plat_arr[@]}" -gt 1 ]] && [ "$PUSH_IMAGE" = "false" ]; then
     print_error "Multi-platform builds (PLATFORMS='${PLATFORMS}') require PUSH_IMAGE=true."
     print_error "Jib cannot load a multi-platform manifest into the local Docker daemon."
     print_error "Either set -p true to push, or specify a single platform with -l."
@@ -159,8 +169,14 @@ if [ -n "$IMAGE_NAME" ]; then
     # IMAGE_NAME is now registry/group/name or registry/name — split it
     IMAGE_REGISTRY="${IMAGE_NAME%%/*}"
     IMAGE_REST="${IMAGE_NAME#*/}"          # everything after the first /
-    IMAGE_GROUP="${IMAGE_REST%/*}"         # middle segment(s)
-    IMAGE_REPO_NAME="${IMAGE_REST##*/}"    # final segment
+    # Handle both registry/name (2-segment) and registry/group/name (3-segment)
+    if [[ "$IMAGE_REST" == */* ]]; then
+        IMAGE_GROUP="${IMAGE_REST%/*}"     # middle segment(s)
+        IMAGE_REPO_NAME="${IMAGE_REST##*/}" # final segment
+    else
+        IMAGE_GROUP=""
+        IMAGE_REPO_NAME="${IMAGE_REST}"
+    fi
 else
     IMAGE_REGISTRY="${REGISTRY}"
     IMAGE_GROUP="${REPO_NAME%/*}"
