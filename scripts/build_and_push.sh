@@ -20,7 +20,7 @@ usage() {
     echo "  -n REPO_NAME     Repository name (default: causa-ai-hub/causa-mcp)"
     echo "  -t TAG           Image tag (default: version from pom.xml)"
     echo "  -b BUILD         Build image true/false (default: true)"
-    echo "  -p PUSH          Push image true/false (default: false)"
+    echo "  -p PUSH          Push image true/false (default: true)"
     echo "  -l PLATFORMS     Target platforms (default: linux/amd64,linux/arm64)"
     echo "  -c CLEAN         Run clean build true/false (default: true)"
     echo "  -s SKIP_TESTS    Skip tests during Maven build true/false (default: true)"
@@ -102,7 +102,7 @@ REGISTRY="${REGISTRY:-quay.io}"
 REPO_NAME="${REPO_NAME:-causa-ai-hub/causa-mcp}"
 IMAGE_TAG="${IMAGE_TAG:-$(resolve_app_version)}"
 BUILD_IMAGE="${BUILD_IMAGE:-true}"
-PUSH_IMAGE="${PUSH_IMAGE:-false}"
+PUSH_IMAGE="${PUSH_IMAGE:-true}"
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
 CLEAN_BUILD="${CLEAN_BUILD:-true}"
 SKIP_TESTS="${SKIP_TESTS:-true}"
@@ -134,9 +134,38 @@ validate_boolean "$PUSH_IMAGE"  "PUSH_IMAGE (-p)"
 validate_boolean "$CLEAN_BUILD" "CLEAN_BUILD (-c)"
 validate_boolean "$SKIP_TESTS"  "SKIP_TESTS (-s)"
 
-# Construct image name if not provided
-if [ -z "$IMAGE_NAME" ]; then
-    IMAGE_NAME="${REGISTRY}/${REPO_NAME}:${IMAGE_TAG}"
+# Jib cannot load a multi-platform manifest into the local Docker daemon;
+# a registry push is required to store the manifest list.
+if [[ "$PLATFORMS" == *,* ]] && [ "$PUSH_IMAGE" = "false" ]; then
+    print_error "Multi-platform builds (PLATFORMS='${PLATFORMS}') require PUSH_IMAGE=true."
+    print_error "Jib cannot load a multi-platform manifest into the local Docker daemon."
+    print_error "Either set -p true to push, or specify a single platform with -l."
+    exit 1
+fi
+
+# Quarkus uses three separate properties to assemble the final image reference:
+#   quarkus.container-image.registry  → quay.io
+#   quarkus.container-image.group     → yourusername
+#   quarkus.container-image.name      → test-img-name
+#   quarkus.container-image.tag       → v1
+# Using .image overrides all of the above and causes .tag to be ignored, so we
+# always derive the three parts from IMAGE_NAME (or REGISTRY + REPO_NAME).
+if [ -n "$IMAGE_NAME" ]; then
+    # Strip optional embedded tag first
+    if [[ "$IMAGE_NAME" == *:* ]]; then
+        IMAGE_TAG="${IMAGE_NAME##*:}"
+        IMAGE_NAME="${IMAGE_NAME%:*}"
+    fi
+    # IMAGE_NAME is now registry/group/name or registry/name — split it
+    IMAGE_REGISTRY="${IMAGE_NAME%%/*}"
+    IMAGE_REST="${IMAGE_NAME#*/}"          # everything after the first /
+    IMAGE_GROUP="${IMAGE_REST%/*}"         # middle segment(s)
+    IMAGE_REPO_NAME="${IMAGE_REST##*/}"    # final segment
+else
+    IMAGE_REGISTRY="${REGISTRY}"
+    IMAGE_GROUP="${REPO_NAME%/*}"
+    IMAGE_REPO_NAME="${REPO_NAME##*/}"
+    IMAGE_NAME="${REGISTRY}/${REPO_NAME}"
 fi
 
 # Validate project structure
@@ -156,7 +185,7 @@ chmod +x ./mvnw
 # Display configuration
 echo ""
 print_info "=== Build Configuration ==="
-print_info "Image Name:  ${IMAGE_NAME}"
+print_info "Image Name:  ${IMAGE_NAME}:${IMAGE_TAG}"
 print_info "Platforms:   ${PLATFORMS}"
 print_info "Build:       ${BUILD_IMAGE}"
 print_info "Push:        ${PUSH_IMAGE}"
@@ -170,41 +199,49 @@ if [ "$PUSH_IMAGE" = "true" ]; then
     echo ""
 fi
 
-# Build Maven command
-MAVEN_CMD="./mvnw"
+# Build Maven command as an array to avoid eval and shell-injection via user-supplied values.
+MAVEN_CMD=(./mvnw)
 
 if [ "$CLEAN_BUILD" = "true" ]; then
-    MAVEN_CMD="${MAVEN_CMD} clean"
+    MAVEN_CMD+=(clean)
 fi
 
-MAVEN_CMD="${MAVEN_CMD} package"
+MAVEN_CMD+=(package)
 
 if [ "$SKIP_TESTS" = "true" ]; then
-    MAVEN_CMD="${MAVEN_CMD} -DskipTests"
+    MAVEN_CMD+=(-DskipTests)
 fi
 
-# Pass container image properties to Quarkus Jib
-MAVEN_CMD="${MAVEN_CMD} -Dquarkus.container-image.build=${BUILD_IMAGE}"
-MAVEN_CMD="${MAVEN_CMD} -Dquarkus.container-image.image=${IMAGE_NAME}"
-MAVEN_CMD="${MAVEN_CMD} -Dquarkus.container-image.push=${PUSH_IMAGE}"
-MAVEN_CMD="${MAVEN_CMD} -Dquarkus.jib.platforms=${PLATFORMS}"
+# Pass container image properties to Quarkus Jib.
+# We pass registry/group/name/tag as separate properties so Quarkus correctly
+# applies the tag — using .image would cause .tag to be silently ignored.
+MAVEN_CMD+=("-Dquarkus.container-image.build=${BUILD_IMAGE}")
+MAVEN_CMD+=("-Dquarkus.container-image.registry=${IMAGE_REGISTRY}")
+MAVEN_CMD+=("-Dquarkus.container-image.group=${IMAGE_GROUP}")
+MAVEN_CMD+=("-Dquarkus.container-image.name=${IMAGE_REPO_NAME}")
+MAVEN_CMD+=("-Dquarkus.container-image.tag=${IMAGE_TAG}")
+MAVEN_CMD+=("-Dquarkus.container-image.push=${PUSH_IMAGE}")
+MAVEN_CMD+=("-Dquarkus.jib.platforms=${PLATFORMS}")
 
 print_info "Executing Maven command:"
-echo "${MAVEN_CMD}"
+echo "${MAVEN_CMD[*]}"
 echo ""
 
 print_info "Starting build process..."
-if eval "${MAVEN_CMD}"; then
+if "${MAVEN_CMD[@]}"; then
     echo ""
     print_info "=== Build Summary ==="
-    print_info "✓ Build completed successfully"
-    print_info "Image: ${IMAGE_NAME}"
-    print_info "Platforms: ${PLATFORMS}"
-
-    if [ "$PUSH_IMAGE" = "true" ]; then
-        print_info "✓ Image pushed to registry"
+    if [ "$BUILD_IMAGE" = "true" ]; then
+        print_info "✓ Container image built successfully"
+        print_info "Image:     ${IMAGE_NAME}:${IMAGE_TAG}"
+        print_info "Platforms: ${PLATFORMS}"
+        if [ "$PUSH_IMAGE" = "true" ]; then
+            print_info "✓ Image pushed to registry"
+        else
+            print_warn "Image was built but not pushed (PUSH_IMAGE=false)"
+        fi
     else
-        print_warn "Image was built but not pushed (PUSH_IMAGE=false)"
+        print_info "✓ Maven package completed successfully (BUILD_IMAGE=false, no container image produced)"
     fi
     echo ""
     exit 0
