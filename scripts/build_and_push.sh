@@ -19,7 +19,6 @@ usage() {
     echo "  -r REGISTRY      Container registry (default: quay.io)"
     echo "  -n REPO_NAME     Repository name (default: causa-ai-hub/causa-mcp)"
     echo "  -t TAG           Image tag (default: version from pom.xml)"
-    echo "  -b BUILD         Build image true/false (default: true)"
     echo "  -p PUSH          Push image true/false (default: true)"
     echo "  -l PLATFORMS     Target platforms (default: linux/amd64,linux/arm64)"
     echo "  -c CLEAN         Run clean build true/false (default: true)"
@@ -31,7 +30,6 @@ usage() {
     echo "  REGISTRY         Container registry"
     echo "  REPO_NAME        Repository name"
     echo "  IMAGE_TAG        Image tag"
-    echo "  BUILD_IMAGE      Build image (true/false)"
     echo "  PUSH_IMAGE       Push image (true/false)"
     echo "  PLATFORMS        Target platforms"
     echo "  CLEAN_BUILD      Clean build (true/false)"
@@ -39,13 +37,13 @@ usage() {
     echo ""
     echo "Examples:"
     echo "  # Build and push with a full image name"
-    echo "  $0 -i quay.io/causa-ai-hub/causa-mcp:0.0.2 -b true -p true"
+    echo "  $0 -i quay.io/causa-ai-hub/causa-mcp:0.0.2"
     echo ""
-    echo "  # Build only (no push)"
-    echo "  $0 -t 0.0.2 -b true -p false"
+    echo "  # Build without pushing (single platform required)"
+    echo "  $0 -t 0.0.2 -p false -l linux/amd64"
     echo ""
     echo "  # Build for amd64 only and push"
-    echo "  $0 -t 0.0.2 -l linux/amd64 -p true"
+    echo "  $0 -t 0.0.2 -l linux/amd64"
     echo ""
     echo "Note: Command-line flags take precedence over environment variables"
     exit "${exit_code}"
@@ -101,7 +99,6 @@ resolve_app_version() {
 REGISTRY="${REGISTRY:-quay.io}"
 REPO_NAME="${REPO_NAME:-causa-ai-hub/causa-mcp}"
 IMAGE_TAG="${IMAGE_TAG:-$(resolve_app_version)}"
-BUILD_IMAGE="${BUILD_IMAGE:-true}"
 PUSH_IMAGE="${PUSH_IMAGE:-true}"
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
 CLEAN_BUILD="${CLEAN_BUILD:-true}"
@@ -109,13 +106,12 @@ SKIP_TESTS="${SKIP_TESTS:-true}"
 IMAGE_NAME="${IMAGE_NAME:-}"
 
 # Parse command-line arguments (override env vars)
-while getopts "i:r:n:t:b:p:l:c:s:h" opt; do
+while getopts "i:r:n:t:p:l:c:s:h" opt; do
     case ${opt} in
         i ) IMAGE_NAME="$OPTARG" ;;
         r ) REGISTRY="$OPTARG" ;;
         n ) REPO_NAME="$OPTARG" ;;
         t ) IMAGE_TAG="$OPTARG" ;;
-        b ) BUILD_IMAGE="$OPTARG" ;;
         p ) PUSH_IMAGE="$OPTARG" ;;
         l ) PLATFORMS="$OPTARG" ;;
         c ) CLEAN_BUILD="$OPTARG" ;;
@@ -129,7 +125,6 @@ while getopts "i:r:n:t:b:p:l:c:s:h" opt; do
 done
 
 # Validate booleans
-validate_boolean "$BUILD_IMAGE" "BUILD_IMAGE (-b)"
 validate_boolean "$PUSH_IMAGE"  "PUSH_IMAGE (-p)"
 validate_boolean "$CLEAN_BUILD" "CLEAN_BUILD (-c)"
 validate_boolean "$SKIP_TESTS"  "SKIP_TESTS (-s)"
@@ -203,7 +198,6 @@ echo ""
 print_info "=== Build Configuration ==="
 print_info "Image Name:  ${IMAGE_NAME}:${IMAGE_TAG}"
 print_info "Platforms:   ${PLATFORMS}"
-print_info "Build:       ${BUILD_IMAGE}"
 print_info "Push:        ${PUSH_IMAGE}"
 print_info "Clean Build: ${CLEAN_BUILD}"
 print_info "Skip Tests:  ${SKIP_TESTS}"
@@ -231,7 +225,7 @@ fi
 # Pass container image properties to Quarkus Jib.
 # We pass registry/group/name/tag as separate properties so Quarkus correctly
 # applies the tag — using .image would cause .tag to be silently ignored.
-MAVEN_CMD+=("-Dquarkus.container-image.build=${BUILD_IMAGE}")
+MAVEN_CMD+=("-Dquarkus.container-image.build=true")
 MAVEN_CMD+=("-Dquarkus.container-image.registry=${IMAGE_REGISTRY}")
 MAVEN_CMD+=("-Dquarkus.container-image.group=${IMAGE_GROUP}")
 MAVEN_CMD+=("-Dquarkus.container-image.name=${IMAGE_REPO_NAME}")
@@ -247,17 +241,13 @@ print_info "Starting build process..."
 if "${MAVEN_CMD[@]}"; then
     echo ""
     print_info "=== Build Summary ==="
-    if [ "$BUILD_IMAGE" = "true" ]; then
-        print_info "✓ Container image built successfully"
-        print_info "Image:     ${IMAGE_NAME}:${IMAGE_TAG}"
-        print_info "Platforms: ${PLATFORMS}"
-        if [ "$PUSH_IMAGE" = "true" ]; then
-            print_info "✓ Image pushed to registry"
-        else
-            print_warn "Image was built but not pushed (PUSH_IMAGE=false)"
-        fi
+    print_info "✓ Container image built successfully"
+    print_info "Image:     ${IMAGE_NAME}:${IMAGE_TAG}"
+    print_info "Platforms: ${PLATFORMS}"
+    if [ "$PUSH_IMAGE" = "true" ]; then
+        print_info "✓ Image pushed to registry"
     else
-        print_info "✓ Maven package completed successfully (BUILD_IMAGE=false, no container image produced)"
+        print_warn "Image was built but not pushed (PUSH_IMAGE=false)"
     fi
     echo ""
     exit 0
